@@ -788,7 +788,26 @@ typedef struct RecompLauncherCNetplayCallbacks {
     /* Optional title preference for a new room of max_slots seats: 1 =
      * rollback, 0 = delay-sync, -1 = use the historical rollback default. */
     int  (*create_default_rollback)(void* ctx, int max_slots);
+    /* Optional (append-only): a match negotiated OUTSIDE this process.
+     *
+     * The Retro hub seats the player with its own lobby client. When the
+     * server launches the match the hub writes a launch record -- the server
+     * messages that seated this player, verbatim -- and starts the game with
+     * RECOMP_NETPLAY_LAUNCH=<record path> (retcomm-launcher
+     * docs/NETPLAY_HANDOFF.md). recomp_launcher_run_window hands the record's
+     * text here before any window opens. The engine adopts those messages as
+     * if they had arrived on its own lobby socket, so fill_launch then answers
+     * exactly as it would have in-game: the hub settles nothing itself.
+     *
+     * 0 = adopted. Nonzero = refused; `why` says why in a sentence a player
+     * can act on, and the launch is abandoned (never started unsettled). */
+    int  (*ingest_launch)(void* ctx, const char* record_json,
+                          char* why, size_t why_cap);
 } RecompLauncherCNetplayCallbacks;
+
+/* recomp_launcher_run_window honours RECOMP_NETPLAY_LAUNCH through
+ * RecompLauncherCNetplayCallbacks.ingest_launch. */
+#define RECOMP_LAUNCHER_HAS_NETPLAY_HANDOFF 1
 
 /* Present since create_max_slots was appended. */
 #define RECOMP_LAUNCHER_HAS_CREATE_MAX_SLOTS 1
@@ -2208,6 +2227,14 @@ typedef struct RecompLauncherCGameInfo {
 // changed, and a host that persists *io on quit keeps it. Only netplay_launch
 // is exempt: it is a transient output and is cleared on anything but a real
 // lobby launch.
+//
+// RECOMP_NETPLAY_LAUNCH=<record> in the environment (consumed: it is unset
+// on the way in, so a rematch launcher opens normally) skips the window and
+// starts the match the record carries, through the game's ingest_launch,
+// fill_launch and, when the mod provider has one, commit_netplay. It returns
+// LAUNCH with io->netplay_launch filled, or QUIT when any of those refused.
+// Either way it writes "<record>.status" -- {"ok":true} or
+// {"ok":false,"why":"..."} -- for the process that wrote the record.
 //
 // Returns: 0 = LAUNCH (boot out_rom_path with the edited *io),
 //          1 = QUIT (caller should exit; *io still holds the edits),
