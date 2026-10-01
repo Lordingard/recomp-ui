@@ -6635,6 +6635,7 @@ static void np_save_network_settings(const LauncherModel* m) {
                  m->netplay_host_local_ip[0] ? m->netplay_host_local_ip
                                              : m->netplay_host_ip);
     std::fprintf(f, "preferred_port=%s\n", m->netplay_host_port);
+    std::fprintf(f, "relay=%s\n", m->netplay_relay_host ? "host" : "server");
     std::fclose(f);
 }
 
@@ -6664,6 +6665,10 @@ static void np_load_network_settings(LauncherModel* m) {
         } else if (std::strcmp(key, "preferred_port") == 0 && val[0]) {
             std::snprintf(m->netplay_host_port, sizeof(m->netplay_host_port),
                           "%s", val);
+        } else if (std::strcmp(key, "relay") == 0 && val[0]) {
+            /* "host" (default) or "server"; anything else keeps the default. */
+            if (std::strcmp(val, "server") == 0) m->netplay_relay_host = false;
+            else if (std::strcmp(val, "host") == 0) m->netplay_relay_host = true;
         }
         /* Legacy force_turn= lines are ignored — Lobby Settings owns relay. */
     }
@@ -6671,6 +6676,8 @@ static void np_load_network_settings(LauncherModel* m) {
     const auto* np = np_cb(m);
     if (np && np->set_lobby_url && m->netplay_lobby_url[0])
         np->set_lobby_url(np->ctx, m->netplay_lobby_url);
+    if (np && np->relay_host_set)
+        (void)np->relay_host_set(np->ctx, m->netplay_relay_host ? 1 : 0);
 }
 
 static void np_ensure_public_ip(LauncherModel* m) {
@@ -7372,11 +7379,40 @@ void draw_netplay_network_modal(LauncherModel* m, const LauncherTheme& th) {
                                      sizeof(m->netplay_lobby_url),
                                      ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::Spacing();
+        {
+            const auto* np = np_cb(m);
+            if (np && np->relay_host_set) {
+                ImGui::TextColored(col(th.text_muted), "Online match relay");
+                ImGui::SetNextItemWidth(px(440));
+                const char* labels[] = { "Host (your connection)", "Lobby server" };
+                int sel = m->netplay_relay_host ? 0 : 1;
+                if (ImGui::Combo("##online_relay", &sel, labels, 2))
+                    m->netplay_relay_host = (sel == 0);
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+                    ImGui::BeginTooltip();
+                    ImGui::PushTextWrapPos(px(380));
+                    ImGui::TextUnformatted(
+                        "Host (default): when you host, your PC carries the match "
+                        "on its own UDP port and your guests connect to you. The "
+                        "lobby opens the port with UPnP or NAT-PMP when your router "
+                        "allows it, otherwise it needs a forwarded port. A guest who "
+                        "cannot reach you falls back to the lobby server's relay "
+                        "automatically, so matches always connect.\n\n"
+                        "Lobby server: every match you host goes through the lobby "
+                        "server's relay.");
+                    ImGui::PopTextWrapPos();
+                    ImGui::EndTooltip();
+                }
+                ImGui::Spacing();
+            }
+        }
         if (ImGui::Button("Cancel", ImVec2(px(120), 0))) {
             const auto* np = np_cb(m);
             const char* current = np && np->default_url ? np->default_url(np->ctx) : "";
             std::snprintf(m->netplay_lobby_url, sizeof(m->netplay_lobby_url), "%s",
                           current ? current : "");
+            if (np && np->relay_host_get)
+                m->netplay_relay_host = np->relay_host_get(np->ctx) != 0;
             m->netplay_network_modal_open = false;
             ImGui::CloseCurrentPopup();
         }
@@ -7387,6 +7423,8 @@ void draw_netplay_network_modal(LauncherModel* m, const LauncherTheme& th) {
             const auto* np = np_cb(m);
             if (np && np->set_lobby_url)
                 np->set_lobby_url(np->ctx, m->netplay_lobby_url);
+            if (np && np->relay_host_set)
+                (void)np->relay_host_set(np->ctx, m->netplay_relay_host ? 1 : 0);
             np_save_network_settings(m);
             np_connect_and_list(m);
             m->netplay_network_modal_open = false;
@@ -8641,6 +8679,20 @@ static void draw_lobby_room_panel(LauncherModel* m, const LauncherTheme& th,
         ImGui::SetNextItemWidth(-1.0f);
         np_copyable_readonly_input("##lobby_server", lobby_server,
                                    sizeof(lobby_server), th);
+        /* Host relay: who carries the match, live. The host sees whether its
+         * port came out reachable and how many guests proved the path; a
+         * guest sees whether its probe got through. Absent when the room
+         * uses the server's relay, so nothing here is a stale signal. */
+        if (np->relay_status &&
+            np->relay_status(np->ctx, m->netplay_relay_status,
+                             sizeof(m->netplay_relay_status)) &&
+            m->netplay_relay_status[0]) {
+            ImGui::Spacing();
+            ImGui::TextColored(col(th.text_muted), "Match Relay");
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextUnformatted(m->netplay_relay_status);
+            ImGui::PopTextWrapPos();
+        }
     }
 }
 
@@ -8680,11 +8732,38 @@ static void draw_lobby_match_settings(LauncherModel* m, const LauncherTheme& th,
                     np->force_input_relay_get(np->ctx) != 0;
             if (np->force_turn_get)
                 m->netplay_force_turn = np->force_turn_get(np->ctx) != 0;
+            if (np->relay_host_get)
+                m->netplay_relay_host = np->relay_host_get(np->ctx) != 0;
         }
         g_lobby_settings_synced = true;
     }
     ImGui::BeginDisabled(!is_host);
     {
+        /* Online rooms: who carries the match. The host's choice, published
+         * to the room; the server falls back to its own relay when a guest
+         * cannot reach the host, so this is never a way to break a match. */
+        if (!m->netplay_local_room && np->relay_host_set) {
+            bool host_relay = m->netplay_relay_host;
+            if (ImGui::Checkbox("Host carries the match (host relay)", &host_relay)) {
+                m->netplay_relay_host = host_relay;
+                if (np->relay_host_set(np->ctx, host_relay ? 1 : 0) == 0)
+                    np_save_network_settings(m);
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+                ImGui::BeginTooltip();
+                ImGui::PushTextWrapPos(px(360));
+                ImGui::TextUnformatted(
+                    "On (default): the match runs through the host's own UDP "
+                    "port; guests connect to the host directly. The room opens "
+                    "the port with UPnP / NAT-PMP where the router allows it and "
+                    "each guest checks it can reach the host before Play. A "
+                    "guest who cannot sends the match through the lobby "
+                    "server's relay instead.\n\n"
+                    "Off: the lobby server's relay carries the match.");
+                ImGui::PopTextWrapPos();
+                ImGui::EndTooltip();
+            }
+        }
         if (np->session_variant_count && np->session_variant_label && np->session_variant_get) {
             const int count = np->session_variant_count(np->ctx);
             const int current = np->session_variant_get(np->ctx);

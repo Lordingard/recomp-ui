@@ -636,6 +636,12 @@ typedef struct {
     /* Lobby UDP SFU (online default). Not exposed in Lobby Settings; LAN clears. */
     bool      netplay_force_input_relay;
     bool      netplay_force_turn;
+    /* Online rooms: the host carries the match (host relay) rather than the
+     * lobby server's relay. Persisted in the network settings file (relay=);
+     * published by the host in match_caps.relay; guests read the host's. */
+    bool      netplay_relay_host;
+    /* One line of live host-relay state from the backend, for the ROOM panel. */
+    char      netplay_relay_status[200];
     /* True = rollback invent path. The title may set the initial room mode. */
     bool      netplay_rollback;
     /* Host Lobby: desired max seats, 2..launcher_model_netplay_room_max_players. */
