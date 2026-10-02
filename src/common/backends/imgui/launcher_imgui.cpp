@@ -6923,19 +6923,23 @@ static int np_delay_frames_from_rtt_ms(int rtt_ms) {
  * floor (see Play) because lobby UDP RTT underestimates the game path.
  *
  * §60: +1 on every tier at RTT ≥ 80 so non-TURN WAN matches start closer to
- * arrival-driven D instead of invent-grace hitching for the first ~5s eval. */
+ * arrival-driven D instead of invent-grace hitching for the first ~5s eval.
+ *
+ * 2026-10-01 (Alex): +1 on every tier again, and everything from 200 ms
+ * starts at 10. The lower tiers carried only one or two frames of margin
+ * over one-way coverage (the delay-sync formula pads three), and under the
+ * host relay / SFU star a 3+ player match pays two legs guest-to-guest, so
+ * matches were starting a frame short and invent-storming into it. */
 static int np_rb_delay_frames_from_rtt_ms(int rtt_ms) {
     if (rtt_ms < 0) rtt_ms = 0;
     int d;
-    if (rtt_ms < 20) d = 3;
-    else if (rtt_ms < 50) d = 3;
-    else if (rtt_ms < 80) d = 4;
-    else if (rtt_ms < 120) d = 6;
-    else if (rtt_ms < 160) d = 7;
-    else if (rtt_ms < 200) d = 8;
-    else if (rtt_ms < 260) d = 9;
+    if (rtt_ms < 50) d = 4;
+    else if (rtt_ms < 80) d = 5;
+    else if (rtt_ms < 120) d = 7;
+    else if (rtt_ms < 160) d = 8;
+    else if (rtt_ms < 200) d = 9;
     else d = 10;
-    if (d < 3) d = 3;
+    if (d < 4) d = 4;
     if (d > 12) d = 12;
     return d;
 }
@@ -8834,8 +8838,8 @@ static void draw_lobby_match_settings(LauncherModel* m, const LauncherTheme& th,
                         "Committed input delay D (send lead / buffer).\n\n"
                         "With rollback (Disable Rollback off), auto D from "
                         "max peer RTT (§59/§60 WAN-aware):\n"
-                        "  0–50 ms → 3, 50–80 → 4, 80–120 → 6,\n"
-                        "  120–160 → 7, then steps up (floor 3).\n"
+                        "  0–50 ms → 4, 50–80 → 5, 80–120 → 7,\n"
+                        "  120–160 → 8, 160–200 → 9, 200+ → 10.\n"
                         "Forced TURN floors at 6 (lobby RTT underestimates "
                         "the relay path).\n\n"
                         "With delay-sync (Disable Rollback on), auto D covers "
