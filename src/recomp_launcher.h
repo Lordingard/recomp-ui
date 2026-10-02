@@ -323,6 +323,13 @@ typedef struct RecompLauncherCNetplayLaunch {
     int      slot_port[RECOMP_LAUNCHER_NETPLAY_MAX_MEMBERS + 1];
     /* Opaque engine-defined session hardware/rules selection, set by host. */
     int      session_variant;
+    /* 1 = the launch said transport "host": the lobby server opened no relay;
+     * the host carries the match on bind_hostport (the port it advertised and
+     * held while the room waited) and every guest dials peer_hostport = that
+     * endpoint. force_input_relay is 0. The host accepts the first packet (2
+     * seats) or runs recomp-net's LAN hub (3+). 0 = the server's relay (SFU)
+     * or a LAN / direct room. recomp-ui docs/HOST_NETPLAY.md "Host relay". */
+    int      transport_host;
 } RecompLauncherCNetplayLaunch;
 
 /* Dense position of session slot `slot` in LOBBY-SEAT order: the rank of its
@@ -366,6 +373,11 @@ typedef struct RecompLauncherCNetplayLocalAddress {
     /* User-facing interface name, for example "Wi-Fi" or "Ethernet". */
     char label[64];
 } RecompLauncherCNetplayLocalAddress;
+
+/* Engines test this to wire relay_host_get/set, relay_status and
+ * RecompLauncherCNetplayLaunch.transport_host only against a recomp-ui that
+ * has them (older pins compile the wiring out). */
+#define RECOMP_LAUNCHER_HAS_HOST_RELAY 1
 
 typedef struct RecompLauncherCNetplayCallbacks {
     void* ctx;
@@ -788,7 +800,40 @@ typedef struct RecompLauncherCNetplayCallbacks {
     /* Optional title preference for a new room of max_slots seats: 1 =
      * rollback, 0 = delay-sync, -1 = use the historical rollback default. */
     int  (*create_default_rollback)(void* ctx, int max_slots);
+    /* Optional (append-only): a match negotiated OUTSIDE this process.
+     *
+     * The Retro hub seats the player with its own lobby client. When the
+     * server launches the match the hub writes a launch record -- the server
+     * messages that seated this player, verbatim -- and starts the game with
+     * RECOMP_NETPLAY_LAUNCH=<record path> (retcomm-launcher
+     * docs/NETPLAY_HANDOFF.md). recomp_launcher_run_window hands the record's
+     * text here before any window opens. The engine adopts those messages as
+     * if they had arrived on its own lobby socket, so fill_launch then answers
+     * exactly as it would have in-game: the hub settles nothing itself.
+     *
+     * 0 = adopted. Nonzero = refused; `why` says why in a sentence a player
+     * can act on, and the launch is abandoned (never started unsettled). */
+    int  (*ingest_launch)(void* ctx, const char* record_json,
+                          char* why, size_t why_cap);
+    /* Optional (append-only): host relay for ONLINE rooms (docs/HOST_NETPLAY.md
+     * "Host relay"). 1 = the host carries the match on its own UDP port and
+     * guests dial it; the lobby server's relay (SFU) is the fallback when a
+     * guest cannot reach the host. 0 = always the server's relay. The host's
+     * preference, published in match_caps.relay for the room it hosts; a
+     * guest's getter answers what the host published. Default 1. */
+    int  (*relay_host_get)(void* ctx);
+    int  (*relay_host_set)(void* ctx, int on);
+    /* Optional: one line of live host-relay state for the waiting room --
+     * the host: the port's reachability result and how many guests have
+     * proven the path; a guest: whether its probe reached the host. Returns
+     * 1 when there is something to show, 0 when idle (not a host-relay room,
+     * LAN, or not seated). */
+    int  (*relay_status)(void* ctx, char* out, size_t out_cap);
 } RecompLauncherCNetplayCallbacks;
+
+/* recomp_launcher_run_window honours RECOMP_NETPLAY_LAUNCH through
+ * RecompLauncherCNetplayCallbacks.ingest_launch. */
+#define RECOMP_LAUNCHER_HAS_NETPLAY_HANDOFF 1
 
 /* Present since create_max_slots was appended. */
 #define RECOMP_LAUNCHER_HAS_CREATE_MAX_SLOTS 1
@@ -2214,6 +2259,14 @@ typedef struct RecompLauncherCGameInfo {
 // changed, and a host that persists *io on quit keeps it. Only netplay_launch
 // is exempt: it is a transient output and is cleared on anything but a real
 // lobby launch.
+//
+// RECOMP_NETPLAY_LAUNCH=<record> in the environment (consumed: it is unset
+// on the way in, so a rematch launcher opens normally) skips the window and
+// starts the match the record carries, through the game's ingest_launch,
+// fill_launch and, when the mod provider has one, commit_netplay. It returns
+// LAUNCH with io->netplay_launch filled, or QUIT when any of those refused.
+// Either way it writes "<record>.status" -- {"ok":true} or
+// {"ok":false,"why":"..."} -- for the process that wrote the record.
 //
 // Returns: 0 = LAUNCH (boot out_rom_path with the edited *io),
 //          1 = QUIT (caller should exit; *io still holds the edits),

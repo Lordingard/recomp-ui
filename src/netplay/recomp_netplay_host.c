@@ -17,6 +17,7 @@
 #include "recomp_net/lan_beacon.h"
 #include "recomp_net/chat_filter.h"
 #include "recomp_net/address.h"
+#include "recomp_net/host_relay.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -596,6 +597,10 @@ static RNetLobbyMatchCaps default_caps(const RecompLauncherCSettings *settings)
   caps.input_prediction = clamp_input_prediction(caps.input_prediction);
   caps.force_turn = g_lobby_force_turn ? 1 : 0;
   caps.force_input_relay = g_lobby_force_input_relay ? 1 : 0;
+  /* Host relay (docs/HOST_NETPLAY.md): the host's setting, default on. The
+   * lobby client drives the port / probe / reports from this cap once the
+   * server echoes it back to the room. */
+  caps.relay_host = rnet_lobby_relay_host_pref() ? 1 : 0;
   fill_caps_mods(&caps);
   return caps;
 }
@@ -2541,6 +2546,88 @@ static int cb_force_turn_set(void *ctx, int force)
   return rnet_lobby_set_match_caps(&caps);
 }
 
+/* Host relay preference (RecompLauncherCNetplayCallbacks.relay_host_*). */
+static int cb_relay_host_get(void *ctx)
+{
+  const RNetLobbyMatchCaps *caps;
+  (void)ctx;
+  if (g_hosting_lan || g_joined_lan)
+    return 0; /* LAN / Direct IP rooms are already host-carried */
+  caps = rnet_lobby_match_caps();
+  if (caps && caps->valid && rnet_lobby_in_lobby())
+    return caps->relay_host ? 1 : 0; /* what the room's host published */
+  return rnet_lobby_relay_host_pref();
+}
+
+static int cb_relay_host_set(void *ctx, int on)
+{
+  (void)ctx;
+  rnet_lobby_set_relay_host_pref(on);
+  if (g_hosting_lan || g_joined_lan)
+    return 0;
+  /* Hosting online right now: republish so the room (and the server's
+   * start decision) follow the new setting at once. */
+  if (rnet_lobby_in_lobby() && rnet_lobby_is_host()) {
+    RNetLobbyMatchCaps caps = default_caps(NULL);
+    return rnet_lobby_set_match_caps(&caps);
+  }
+  return 0;
+}
+
+static int cb_relay_status(void *ctx, char *out, size_t out_cap)
+{
+  RNetHostRelayStatus st;
+  (void)ctx;
+  if (!out || !out_cap)
+    return 0;
+  out[0] = '\0';
+  if (g_hosting_lan || g_joined_lan || !rnet_lobby_in_lobby())
+    return 0;
+  if (!rnet_lobby_host_relay_status(&st))
+    return 0;
+  if (st.role == 1) {
+    int guests = 0, proven = 0, i;
+    const int n = rnet_lobby_member_count();
+    for (i = 0; i < n; ++i) {
+      RNetLobbyMember mem;
+      if (!rnet_lobby_member_get(i, &mem) || mem.is_spectator ||
+          rnet_lobby_member_is_host(&mem))
+        continue;
+      guests++;
+      if (strcmp(mem.path, "direct") == 0 && mem.path_fresh) proven++;
+    }
+    if (!st.port.done) {
+      snprintf(out, out_cap, "You carry the match. Opening UDP port %u (%s)...",
+               (unsigned)st.port.local_port, st.port.stage[0] ? st.port.stage : "starting");
+    } else if (!st.port.endpoint[0]) {
+      snprintf(out, out_cap, "%s", st.port.detail);
+    } else {
+      snprintf(out, out_cap,
+               "You carry the match at %s (%s). Guests who can reach you: %d of %d%s",
+               st.port.endpoint, st.port.how, proven, guests,
+               guests && proven < guests
+                   ? ". Any guest who cannot sends the match through the lobby "
+                     "server's relay."
+                   : ".");
+    }
+    return 1;
+  }
+  if (st.role == 2) {
+    if (st.probing || !st.last_report[0])
+      snprintf(out, out_cap, "The host carries the match. Checking you can reach %s...",
+               st.probed[0] ? st.probed : "the host");
+    else if (strcmp(st.last_report, "direct") == 0)
+      snprintf(out, out_cap, "The host carries the match; you reach it directly (%s).",
+               st.probed);
+    else
+      snprintf(out, out_cap,
+               "The host's port did not answer (%s): the lobby server will relay "
+               "this match. Retrying.", st.probed);
+    return 1;
+  }
+  return 0;
+}
+
 static int cb_lobby_max_slots(void *ctx)
 {
   const RNetLobbyJoinInfo *join;
@@ -2659,6 +2746,7 @@ static int cb_fill_launch(void *ctx, RecompLauncherCNetplayLaunch *out)
    * with the host's UI toggle and is overwritten by any lobby_update that
    * arrives before we get here. See RNetLobbyJoinInfo::force_input_relay. */
   out->force_input_relay = join.force_input_relay ? 1 : 0;
+  out->transport_host = join.transport_host ? 1 : 0;
   out->max_slots = join.max_slots >= 2 ? clamp_lobby_max_slots(join.max_slots)
                                        : clamp_lobby_max_slots(g_lobby_max_slots);
   out->player_count = join.player_count > 0 ? join.player_count : out->max_slots;
@@ -3542,6 +3630,9 @@ static RecompLauncherCNetplayCallbacks g_callbacks = {
     .session_variant_set = cb_session_variant_set,
 #endif
     .rollback_set = cb_rollback_set,
+    .relay_host_get = cb_relay_host_get,
+    .relay_host_set = cb_relay_host_set,
+    .relay_status = cb_relay_status,
     .input_prediction_get = cb_input_prediction_get,
     .input_prediction_set = cb_input_prediction_set,
     .connecting = cb_connecting,

@@ -512,6 +512,26 @@ if(BUILD_TESTING)
         COMMAND $<TARGET_FILE:recomp-ui-launcher-settings-test>
                 "${CMAKE_CURRENT_BINARY_DIR}/settings-fixtures")
 
+    # RECOMP_NETPLAY_LAUNCH: a match the Retro hub negotiated, handed to the
+    # game's ingest_launch without opening the window.
+    add_executable(recomp-ui-launcher-netplay-handoff-test
+        tests/launcher_netplay_handoff_test.c
+        src/common/launcher_ng_capi.c
+        src/common/launcher_model.c
+        src/common/crc32.c
+        src/common/sha1.c
+        src/common/sha256.c
+        src/common/ips_patch.c
+        src/consoles/psx/memcard_format.c)
+    target_include_directories(recomp-ui-launcher-netplay-handoff-test PRIVATE
+        src src/common src/consoles/psx)
+    target_link_libraries(recomp-ui-launcher-netplay-handoff-test PRIVATE ${RUI_SDL_TARGET})
+    target_compile_definitions(recomp-ui-launcher-netplay-handoff-test PRIVATE ${RUI_SDL_DEFS})
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/netplay-handoff")
+    add_test(NAME recomp-ui-launcher-netplay-handoff
+        COMMAND $<TARGET_FILE:recomp-ui-launcher-netplay-handoff-test>
+                "${CMAKE_CURRENT_BINARY_DIR}/netplay-handoff")
+
     # A host-owned binding store under the NES profile leaves the runner's
     # keybinds.ini alone (launcher_binds.c nes_native_store).
     add_executable(recomp-ui-nes-host-bindings-test
