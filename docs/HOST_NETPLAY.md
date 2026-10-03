@@ -541,21 +541,27 @@ pins still compile and run engines that do not declare connection types.
 
 ## Host relay (2026-10-01)
 
-Online matches run through the **host's own UDP port** by default; the lobby
-server's UDP relay (the "SFU") is the fallback. Server contract:
+**Opt-in (2026-10-03).** Online matches use ICE (STUN, then TURN) by default so
+no port needs forwarding. The host relay below is off unless the host enables
+it (Network Settings "Online match relay", or the MATCH SETTINGS checkbox),
+because it needs a UDP port guests can reach and the lobby server's UDP relay
+it once fell back to has been retired. It is persisted as `host_relay=1` in
+`saves/netplay/network settings`; the older `relay=` line is ignored.
+
+With it enabled, online matches run through the **host's own UDP port**. Server contract:
 recomp-net-server `docs/WS_LOBBY.md` "Host relay". Client implementation:
 recomp-net `recomp_net/host_relay.h`, driven from `rnet_lobby_pump`, so the
 shared backend here only owns the **setting** and the **room line**:
 
 | piece | where |
 | --- | --- |
-| The ask: `match_caps.relay = "host"` | `default_caps` publishes `RNetLobbyMatchCaps.relay_host` from `rnet_lobby_relay_host_pref()` (default on) |
+| The ask: `match_caps.relay = "host"` | `default_caps` publishes `RNetLobbyMatchCaps.relay_host` from `rnet_lobby_relay_host_pref()` (default off; `recomp_netplay_host_init` sets it) |
 | The setting | `RecompLauncherCNetplayCallbacks.relay_host_get/set` (host preference; a guest's getter answers what the host published). recomp-ui: Network Settings "Online match relay" and the MATCH SETTINGS checkbox "Host carries the match"; persisted as `relay=host|server` in `saves/netplay/network settings` and pushed to the backend on load |
 | The host's port | while the room waits, the lobby client holds the game port (the port in `host_endpoint` passed to `create`, 7777 by default), opens it with UPnP IGD, else NAT-PMP, else learns the STUN mapping, answers guests' probes, and sends `set_host_endpoint` once per address |
 | The guests' proof | each seated guest probes the advertised endpoint and sends `path_report` `direct` / `fail`, refreshed every 45 s (the server trusts 120). Every seat's latest report comes back on `lobby_update` as `path` / `path_fresh` (`RNetLobbyMember`) |
 | The room line | `relay_status` → the ROOM panel's "Match Relay": the host sees its endpoint, how it was opened and how many guests have proven the path; a guest sees whether its probe got through |
 | The launch | `launch.transport == "host"` → `RNetLobbyJoinInfo.transport_host` → `RecompLauncherCNetplayLaunch.transport_host`, `force_input_relay = 0`. The host binds `bind_hostport` and accepts the first packet (2 seats) or runs `rnet_session_start_lan_hub` (3+); guests dial `peer_hostport` = the host's endpoint. The waiting-room socket is released on `launch` so the game binds the port; the router mapping stays until `leave` / disconnect, which unmap it |
-| The fallback | the server launches `transport: "sfu"` whenever any guest's report is missing, stale or `fail`, so a match always connects; nothing on the client decides this |
+| The fallback | none any more: the server refuses to start (`relay_unavailable`) when any guest's report is missing, stale or `fail`. The host turns the option off to use ICE |
 
 Engines that bind the game port from the launch need no change beyond
 reading `transport_host`: it takes the LAN / hub transport path (psxrecomp

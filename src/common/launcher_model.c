@@ -686,9 +686,10 @@ void launcher_model_init(LauncherModel* m,
      * Online start is always lobby SFU (§108). */
     m->netplay_force_input_relay = false;
     m->netplay_force_turn = false;
-    /* Host relay is the online default (2026-10-01): the lobby server's relay
-     * carries a match only when a guest cannot reach the host. */
-    m->netplay_relay_host = true;
+    /* Online matches negotiate with ICE (STUN, then TURN) by default, so
+     * nobody has to forward a port. The host relay needs a reachable UDP
+     * port and has no fallback, so it is an explicit opt-in. */
+    m->netplay_relay_host = false;
     m->netplay_relay_status[0] = '\0';
     /* Rollback is the legacy default; a title may choose delay-sync for the
      * initial room size through create_default_rollback below. */

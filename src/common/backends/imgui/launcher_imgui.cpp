@@ -6635,7 +6635,7 @@ static void np_save_network_settings(const LauncherModel* m) {
                  m->netplay_host_local_ip[0] ? m->netplay_host_local_ip
                                              : m->netplay_host_ip);
     std::fprintf(f, "preferred_port=%s\n", m->netplay_host_port);
-    std::fprintf(f, "relay=%s\n", m->netplay_relay_host ? "host" : "server");
+    std::fprintf(f, "host_relay=%d\n", m->netplay_relay_host ? 1 : 0);
     std::fclose(f);
 }
 
@@ -6665,12 +6665,14 @@ static void np_load_network_settings(LauncherModel* m) {
         } else if (std::strcmp(key, "preferred_port") == 0 && val[0]) {
             std::snprintf(m->netplay_host_port, sizeof(m->netplay_host_port),
                           "%s", val);
-        } else if (std::strcmp(key, "relay") == 0 && val[0]) {
-            /* "host" (default) or "server"; anything else keeps the default. */
-            if (std::strcmp(val, "server") == 0) m->netplay_relay_host = false;
-            else if (std::strcmp(val, "host") == 0) m->netplay_relay_host = true;
+        } else if (std::strcmp(key, "host_relay") == 0 && val[0]) {
+            /* Opt-in: 1 = the host's own port carries the match. */
+            m->netplay_relay_host = std::strcmp(val, "1") == 0;
         }
-        /* Legacy force_turn= lines are ignored — Lobby Settings owns relay. */
+        /* Legacy force_turn= lines are ignored — Lobby Settings owns relay.
+         * Legacy relay=host|server is ignored too: host was the old default
+         * and was saved by everyone who opened Network Settings, so reading
+         * it would keep the host relay on for players who never chose it. */
     }
     std::fclose(f);
     const auto* np = np_cb(m);
@@ -7388,22 +7390,23 @@ void draw_netplay_network_modal(LauncherModel* m, const LauncherTheme& th) {
             if (np && np->relay_host_set) {
                 ImGui::TextColored(col(th.text_muted), "Online match relay");
                 ImGui::SetNextItemWidth(px(440));
-                const char* labels[] = { "Host (your connection)", "Lobby server" };
-                int sel = m->netplay_relay_host ? 0 : 1;
+                const char* labels[] = { "Automatic (ICE / STUN / TURN)",
+                                         "Host port (needs open UDP port)" };
+                int sel = m->netplay_relay_host ? 1 : 0;
                 if (ImGui::Combo("##online_relay", &sel, labels, 2))
-                    m->netplay_relay_host = (sel == 0);
+                    m->netplay_relay_host = (sel == 1);
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
                     ImGui::BeginTooltip();
                     ImGui::PushTextWrapPos(px(380));
                     ImGui::TextUnformatted(
-                        "Host (default): when you host, your PC carries the match "
-                        "on its own UDP port and your guests connect to you. The "
-                        "lobby opens the port with UPnP or NAT-PMP when your router "
-                        "allows it, otherwise it needs a forwarded port. A guest who "
-                        "cannot reach you falls back to the lobby server's relay "
-                        "automatically, so matches always connect.\n\n"
-                        "Lobby server: every match you host goes through the lobby "
-                        "server's relay.");
+                        "Automatic (default): players connect with ICE. It tries "
+                        "a direct path using STUN and falls back to a TURN relay, "
+                        "so no port forwarding is needed.\n\n"
+                        "Host port: your PC carries the match on its own UDP port "
+                        "and guests connect to it. The lobby opens the port with "
+                        "UPnP or NAT-PMP when your router allows it, otherwise it "
+                        "needs a forwarded port. If a guest cannot reach it the "
+                        "match does not start.");
                     ImGui::PopTextWrapPos();
                     ImGui::EndTooltip();
                 }
@@ -7906,8 +7909,9 @@ static void np_ingest_last_error(LauncherModel* m, const RecompLauncherCNetplayC
     else if (std::strcmp(err, "relay_unavailable") == 0)
         std::snprintf(m->netplay_status, sizeof(m->netplay_status),
                       "Couldn't start through the host. A guest can't reach "
-                      "your port, or no public endpoint was found. Check "
-                      "port forwarding/UPnP and remove any spectators.");
+                      "your port, or no public endpoint was found. Forward the "
+                      "port or turn off Host port in Network Settings to use "
+                      "ICE, and remove any spectators.");
     else if (std::strcmp(err, "host_slot_fixed") == 0)
         std::snprintf(m->netplay_status, sizeof(m->netplay_status),
                       "Host stays in seat 1. Rearrange guests among the "
@@ -8745,8 +8749,7 @@ static void draw_lobby_match_settings(LauncherModel* m, const LauncherTheme& th,
     ImGui::BeginDisabled(!is_host);
     {
         /* Online rooms: who carries the match. The host's choice, published
-         * to the room; the server falls back to its own relay when a guest
-         * cannot reach the host, so this is never a way to break a match. */
+         * to the room. Off (default) is ICE; on needs a port guests can reach. */
         if (!m->netplay_local_room && np->relay_host_set) {
             bool host_relay = m->netplay_relay_host;
             if (ImGui::Checkbox("Host carries the match (host relay)", &host_relay)) {
@@ -8758,13 +8761,13 @@ static void draw_lobby_match_settings(LauncherModel* m, const LauncherTheme& th,
                 ImGui::BeginTooltip();
                 ImGui::PushTextWrapPos(px(360));
                 ImGui::TextUnformatted(
-                    "On (default): the match runs through the host's own UDP "
-                    "port; guests connect to the host directly. The room opens "
-                    "the port with UPnP / NAT-PMP where the router allows it and "
-                    "each guest checks it can reach the host before Play. A "
-                    "guest who cannot sends the match through the lobby "
-                    "server's relay instead.\n\n"
-                    "Off: the lobby server's relay carries the match.");
+                    "On: the match runs through the host's own UDP port; "
+                    "guests connect to the host directly. The room opens the "
+                    "port with UPnP / NAT-PMP where the router allows it, "
+                    "otherwise it needs a forwarded port. If a guest cannot "
+                    "reach it, Play is refused.\n\n"
+                    "Off (default): players connect with ICE (STUN, then TURN), "
+                    "so no port forwarding is needed.");
                 ImGui::PopTextWrapPos();
                 ImGui::EndTooltip();
             }
