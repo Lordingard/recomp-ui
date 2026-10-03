@@ -7905,8 +7905,9 @@ static void np_ingest_last_error(LauncherModel* m, const RecompLauncherCNetplayC
                       "retry Play.");
     else if (std::strcmp(err, "relay_unavailable") == 0)
         std::snprintf(m->netplay_status, sizeof(m->netplay_status),
-                      "Lobby UDP SFU is unavailable. Fix INPUT_RELAY_* on "
-                      "the lobby server (online matches require it).");
+                      "Couldn't start through the host. A guest can't reach "
+                      "your port, or no public endpoint was found. Check "
+                      "port forwarding/UPnP and remove any spectators.");
     else if (std::strcmp(err, "host_slot_fixed") == 0)
         std::snprintf(m->netplay_status, sizeof(m->netplay_status),
                       "Host stays in seat 1. Rearrange guests among the "
