@@ -541,14 +541,17 @@ pins still compile and run engines that do not declare connection types.
 
 ## Host relay (2026-10-01)
 
-**Opt-in (2026-10-03).** Online matches use ICE (STUN, then TURN) by default so
-no port needs forwarding. The host relay below is off unless the host enables
-it (Network Settings "Online match relay", or the MATCH SETTINGS checkbox),
-because it needs a UDP port guests can reach and the lobby server's UDP relay
-it once fell back to has been retired. It is persisted as `host_relay=1` in
-`saves/netplay/network settings`; the older `relay=` line is ignored.
+**Not offered by the launcher (2026-10-03).** Online matches always use ICE
+(STUN, then TURN), so no port needs forwarding. The host relay below needs a UDP
+port guests can reach, and the lobby server's UDP relay it once fell back to has
+been retired, so recomp-ui no longer exposes the setting;
+`recomp_netplay_host_init` pins `rnet_lobby_relay_host_pref()` to off. The
+`relay_host_*` callbacks remain for engines that drive it themselves, and a
+saved `relay=` line is ignored.
 
-With it enabled, online matches run through the **host's own UDP port**. Server contract:
+The rest of this section describes the mechanism as an engine can still enable it.
+
+Enabled, online matches run through the **host's own UDP port**. Server contract:
 recomp-net-server `docs/WS_LOBBY.md` "Host relay". Client implementation:
 recomp-net `recomp_net/host_relay.h`, driven from `rnet_lobby_pump`, so the
 shared backend here only owns the **setting** and the **room line**:
