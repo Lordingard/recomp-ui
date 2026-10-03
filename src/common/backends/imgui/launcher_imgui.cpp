@@ -6636,6 +6636,7 @@ static void np_save_network_settings(const LauncherModel* m) {
                                              : m->netplay_host_ip);
     std::fprintf(f, "preferred_port=%s\n", m->netplay_host_port);
     std::fprintf(f, "relay=%s\n", m->netplay_relay_host ? "host" : "server");
+    std::fprintf(f, "relay_via=%s\n", m->netplay_relay_via_ice ? "ice" : "port");
     std::fclose(f);
 }
 
@@ -6669,6 +6670,10 @@ static void np_load_network_settings(LauncherModel* m) {
             /* "host" (default) or "server"; anything else keeps the default. */
             if (std::strcmp(val, "server") == 0) m->netplay_relay_host = false;
             else if (std::strcmp(val, "host") == 0) m->netplay_relay_host = true;
+        } else if (std::strcmp(key, "relay_via") == 0 && val[0]) {
+            /* "ice" (default) or "port" (legacy advertised UDP port). */
+            if (std::strcmp(val, "port") == 0) m->netplay_relay_via_ice = false;
+            else if (std::strcmp(val, "ice") == 0) m->netplay_relay_via_ice = true;
         }
         /* Legacy force_turn= lines are ignored — Lobby Settings owns relay. */
     }
@@ -6678,6 +6683,8 @@ static void np_load_network_settings(LauncherModel* m) {
         np->set_lobby_url(np->ctx, m->netplay_lobby_url);
     if (np && np->relay_host_set)
         (void)np->relay_host_set(np->ctx, m->netplay_relay_host ? 1 : 0);
+    if (np && np->relay_via_ice_set)
+        (void)np->relay_via_ice_set(np->ctx, m->netplay_relay_via_ice ? 1 : 0);
 }
 
 static void np_ensure_public_ip(LauncherModel* m) {
@@ -7903,11 +7910,11 @@ static void np_ingest_last_error(LauncherModel* m, const RecompLauncherCNetplayC
         std::snprintf(m->netplay_status, sizeof(m->netplay_status),
                       "Peer connection info missing — have guests rejoin, then "
                       "retry Play.");
-    else if (std::strcmp(err, "relay_unavailable") == 0)
-        std::snprintf(m->netplay_status, sizeof(m->netplay_status),
-                      "Couldn't start through the host. A guest can't reach "
-                      "your port, or no public endpoint was found. Check "
-                      "port forwarding/UPnP and remove any spectators.");
+    else if (const char* relay_txt = launcher_model_relay_error_text(
+                 err, np->relay_via_ice_get &&
+                          np->relay_via_ice_get(np->ctx) != 0))
+        std::snprintf(m->netplay_status, sizeof(m->netplay_status), "%s",
+                      relay_txt);
     else if (std::strcmp(err, "host_slot_fixed") == 0)
         std::snprintf(m->netplay_status, sizeof(m->netplay_status),
                       "Host stays in seat 1. Rearrange guests among the "
@@ -8739,6 +8746,8 @@ static void draw_lobby_match_settings(LauncherModel* m, const LauncherTheme& th,
                 m->netplay_force_turn = np->force_turn_get(np->ctx) != 0;
             if (np->relay_host_get)
                 m->netplay_relay_host = np->relay_host_get(np->ctx) != 0;
+            if (np->relay_via_ice_get)
+                m->netplay_relay_via_ice = np->relay_via_ice_get(np->ctx) != 0;
         }
         g_lobby_settings_synced = true;
     }
@@ -8767,6 +8776,31 @@ static void draw_lobby_match_settings(LauncherModel* m, const LauncherTheme& th,
                     "Off: the lobby server's relay carries the match.");
                 ImGui::PopTextWrapPos();
                 ImGui::EndTooltip();
+            }
+            if (np->relay_via_ice_set && m->netplay_relay_host) {
+                bool via_ice = m->netplay_relay_via_ice;
+                if (ImGui::Checkbox(
+                        "Connect through the host with ICE (no port forward "
+                        "needed)", &via_ice)) {
+                    m->netplay_relay_via_ice = via_ice;
+                    if (np->relay_via_ice_set(np->ctx, via_ice ? 1 : 0) == 0)
+                        np_save_network_settings(m);
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+                    ImGui::BeginTooltip();
+                    ImGui::PushTextWrapPos(px(360));
+                    ImGui::TextUnformatted(
+                        "On (default): each guest connects to you with an ICE "
+                        "link (the same technique video calls use), so no "
+                        "router port needs to be forwarded. Every guest must "
+                        "show connected before Play; spectators aren't "
+                        "supported in this mode.\n\n"
+                        "Off: the older mode, which opens a UDP port on your "
+                        "router with UPnP / NAT-PMP and needs a forwarded "
+                        "port otherwise.");
+                    ImGui::PopTextWrapPos();
+                    ImGui::EndTooltip();
+                }
             }
         }
         if (np->session_variant_count && np->session_variant_label && np->session_variant_get) {
