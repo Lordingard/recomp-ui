@@ -3735,21 +3735,22 @@ void launcher_model_password_commit(LauncherModel* m, const char* text) {
     launcher_model_password_reload(m);   // reflect what actually landed on disk
 }
 
-// Zapper switches: flip the model state and persist through launcher_binds'
-// [zapper] section writer immediately (same persist-on-change behavior as the
-// rebind chips). launcher_binds_set_zapper is a no-op-safe plain writer.
+// Zapper switches: host-owned bindings return edits through Settings; legacy
+// hosts persist immediately through launcher_binds' [zapper] section writer.
 void launcher_binds_set_zapper(int mouse_enabled, int crosshair);   // launcher_binds.c
 
 void launcher_model_toggle_zapper_mouse(LauncherModel* m) {
     if (!m->zapper) return;
     m->zapper_mouse = !m->zapper_mouse;
-    launcher_binds_set_zapper(m->zapper_mouse ? 1 : 0, m->zapper_crosshair ? 1 : 0);
+    if (m->settings_bindings) m->s.zapper_mouse = m->zapper_mouse ? 1 : -1;
+    else launcher_binds_set_zapper(m->zapper_mouse ? 1 : 0, m->zapper_crosshair ? 1 : 0);
 }
 
 void launcher_model_toggle_zapper_crosshair(LauncherModel* m) {
     if (!m->zapper) return;
     m->zapper_crosshair = !m->zapper_crosshair;
-    launcher_binds_set_zapper(m->zapper_mouse ? 1 : 0, m->zapper_crosshair ? 1 : 0);
+    if (m->settings_bindings) m->s.zapper_crosshair = m->zapper_crosshair ? 1 : -1;
+    else launcher_binds_set_zapper(m->zapper_mouse ? 1 : 0, m->zapper_crosshair ? 1 : 0);
 }
 
 // ---- MSU-1 IPS auto-patching (mirrors the legacy launcher's do_patch() /

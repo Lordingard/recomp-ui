@@ -1359,7 +1359,11 @@ struct RecompLauncherCSettings {
     // Local display choice from GameInfo.netplay_view_labels. Persisted by
     // the host, separate from single-player aspect and match capabilities.
     int netplay_view_index;
+    /* Host-owned NES Zapper switches when GameInfo.settings_bindings is set.
+     * 0 = unset (enabled), 1 = enabled, -1 = disabled. */
+    int zapper_mouse, zapper_crosshair;
 };
+#define RECOMP_LAUNCHER_HAS_ZAPPER_SETTINGS 1
 
 /* Largest run-ahead depth the launcher will offer for
  * RecompLauncherCSettings.run_ahead. Deeper than this and the cost (one full
