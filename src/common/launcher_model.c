@@ -687,9 +687,10 @@ void launcher_model_init(LauncherModel* m,
      * Online start is always lobby SFU (§108). */
     m->netplay_force_input_relay = false;
     m->netplay_force_turn = false;
-    /* Host relay is the online default (2026-10-01): the lobby server's relay
-     * carries a match only when a guest cannot reach the host. */
-    m->netplay_relay_host = true;
+    /* Online matches always negotiate with ICE (STUN, then TURN), so nobody
+     * has to forward a port. The host relay needs a reachable UDP port and
+     * has no fallback, so the launcher no longer offers it. */
+    m->netplay_relay_host = false;
     m->netplay_relay_status[0] = '\0';
     /* Rollback is the legacy default; a title may choose delay-sync for the
      * initial room size through create_default_rollback below. */
@@ -3922,21 +3923,22 @@ void launcher_model_password_commit(LauncherModel* m, const char* text) {
     launcher_model_password_reload(m);   // reflect what actually landed on disk
 }
 
-// Zapper switches: flip the model state and persist through launcher_binds'
-// [zapper] section writer immediately (same persist-on-change behavior as the
-// rebind chips). launcher_binds_set_zapper is a no-op-safe plain writer.
+// Zapper switches: host-owned bindings return edits through Settings; legacy
+// hosts persist immediately through launcher_binds' [zapper] section writer.
 void launcher_binds_set_zapper(int mouse_enabled, int crosshair);   // launcher_binds.c
 
 void launcher_model_toggle_zapper_mouse(LauncherModel* m) {
     if (!m->zapper) return;
     m->zapper_mouse = !m->zapper_mouse;
-    launcher_binds_set_zapper(m->zapper_mouse ? 1 : 0, m->zapper_crosshair ? 1 : 0);
+    if (m->settings_bindings) m->s.zapper_mouse = m->zapper_mouse ? 1 : -1;
+    else launcher_binds_set_zapper(m->zapper_mouse ? 1 : 0, m->zapper_crosshair ? 1 : 0);
 }
 
 void launcher_model_toggle_zapper_crosshair(LauncherModel* m) {
     if (!m->zapper) return;
     m->zapper_crosshair = !m->zapper_crosshair;
-    launcher_binds_set_zapper(m->zapper_mouse ? 1 : 0, m->zapper_crosshair ? 1 : 0);
+    if (m->settings_bindings) m->s.zapper_crosshair = m->zapper_crosshair ? 1 : -1;
+    else launcher_binds_set_zapper(m->zapper_mouse ? 1 : 0, m->zapper_crosshair ? 1 : 0);
 }
 
 // ---- MSU-1 IPS auto-patching (mirrors the legacy launcher's do_patch() /

@@ -1474,11 +1474,15 @@ struct RecompLauncherCSettings {
      * Only meaningful when the host supplied a vocabulary. Appended
      * additively; a zero-initialized host reads as unset. */
     int  internal_resolution;
+    /* Host-owned NES Zapper switches when GameInfo.settings_bindings is set.
+     * 0 = unset (enabled), 1 = enabled, -1 = disabled. */
+    int zapper_mouse, zapper_crosshair;
     /* Host opt-in scale controller. The minimum uses the same line-height
      * encoding as internal_resolution (1 = Native, 720/1080/1440). */
     int  dynamic_resolution;
     int  dynamic_resolution_min;
 };
+#define RECOMP_LAUNCHER_HAS_ZAPPER_SETTINGS 1
 
 /* Largest run-ahead depth the launcher will offer for
  * RecompLauncherCSettings.run_ahead. Deeper than this and the cost (one full
