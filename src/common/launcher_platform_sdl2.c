@@ -22,6 +22,53 @@ void launcher_platform_set_quit_sdl(bool quit_sdl) {
     s_quit_sdl = quit_sdl;
 }
 
+static bool forced_usable_bounds(SDL_Rect* out) {
+    const char* value = getenv("LNG_FORCE_USABLE_BOUNDS");
+    if (!value || !value[0] || !out) return false;
+    int w = 0, h = 0;
+    if (sscanf(value, "%dx%d", &w, &h) != 2 || w <= 0 || h <= 0)
+        return false;
+    out->x = 0;
+    out->y = 0;
+    out->w = w;
+    out->h = h;
+    return true;
+}
+
+static void fit_initial_window_to_display(int* width, int* height) {
+    if (!width || !height || *width <= 0 || *height <= 0) return;
+
+    SDL_Rect usable = {0};
+    bool have_bounds = forced_usable_bounds(&usable);
+    if (!have_bounds)
+        have_bounds = SDL_GetDisplayUsableBounds(0, &usable) == 0;
+    if (!have_bounds || usable.w <= 0 || usable.h <= 0) return;
+
+    // Leave room for desktop panels/title bars. Normal desktop sizes keep the
+    // default 1100x880 window; only cramped displays get a smaller launch size.
+    const int margin = 64;
+    int max_w = usable.w - margin;
+    int max_h = usable.h - margin;
+    if (max_w <= 0 || max_h <= 0) return;
+    if (*width <= max_w && *height <= max_h) return;
+
+    float scale_w = (float)max_w / (float)*width;
+    float scale_h = (float)max_h / (float)*height;
+    float scale = scale_w < scale_h ? scale_w : scale_h;
+    if (scale <= 0.0f || scale >= 1.0f) return;
+
+    const int min_w = 820;
+    const int min_h = 600;
+    int fitted_w = (int)((float)*width * scale);
+    int fitted_h = (int)((float)*height * scale);
+    if (fitted_w < min_w && max_w >= min_w) fitted_w = min_w;
+    if (fitted_h < min_h && max_h >= min_h) fitted_h = min_h;
+    if (fitted_w > max_w) fitted_w = max_w;
+    if (fitted_h > max_h) fitted_h = max_h;
+    if (fitted_w > 0) *width = fitted_w;
+    if (fitted_h > 0) *height = fitted_h;
+}
+
 bool launcher_platform_open(LauncherPlatform* p, const char* title,
                             int logical_w, int logical_h) {
     if (!p) return false;
@@ -81,6 +128,7 @@ bool launcher_platform_open(LauncherPlatform* p, const char* title,
     // the original logical size, so the DPI-independent layout + framebuffer
     // scaling can be validated end to end. See launcher_platform_refresh_metrics.
     int win_w = logical_w, win_h = logical_h;
+    fit_initial_window_to_display(&win_w, &win_h);
     {
         const char* fs = getenv("LNG_FORCE_SCALE");
         if (fs && fs[0]) {

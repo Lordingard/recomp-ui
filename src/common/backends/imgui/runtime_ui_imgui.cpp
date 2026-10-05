@@ -92,16 +92,32 @@ void draw_items(RecompRuntimeUi *ui, const LauncherTheme &theme,
         ImGui::PushID(static_cast<int>(index));
         if (!enabled) ImGui::BeginDisabled();
         const ImVec2 start = ImGui::GetCursorScreenPos();
-        const float row_h = item->description && item->description[0]
-                                ? theme.row_height + theme.spacing_sm
-                                : theme.row_height;
+        const float base_row_h = item->description && item->description[0]
+                                     ? theme.row_height + theme.spacing_sm
+                                     : theme.row_height;
         const float step_button_w =
-            touch_friendly ? std::max(76.0f, row_h * 0.90f) : 38.0f;
+            touch_friendly ? std::max(76.0f, base_row_h * 0.90f) : 38.0f;
         const float step_gap = touch_friendly ? 12.0f : 6.0f;
         const float step_controls_w =
             item->type == RECOMP_RUNTIME_UI_INT
                 ? step_button_w * 2.0f + step_gap + theme.spacing_sm
                 : 0.0f;
+        const float row_w = ImGui::GetContentRegionAvail().x;
+        const bool editing_this = item->type == RECOMP_RUNTIME_UI_TEXT &&
+                                  ui->editing_text && selected;
+        const float field_w = touch_friendly
+            ? std::clamp(row_w * 0.42f, 240.0f, 520.0f) : 200.0f;
+        const float value_w = ImGui::CalcTextSize(value).x;
+        const float control_w = editing_this ? field_w : value_w + step_controls_w;
+        const float text_w = std::max(1.0f, row_w - theme.spacing_md * 2.0f -
+                                             control_w - theme.spacing_sm);
+        const char* label = item->label ? item->label : "";
+        const float label_h = ImGui::CalcTextSize(label, nullptr, false, text_w).y;
+        const bool has_description = item->description && item->description[0];
+        const float description_h = has_description
+            ? ImGui::CalcTextSize(item->description, nullptr, false, text_w).y : 0.0f;
+        const float row_h = std::max(base_row_h, theme.spacing_sm * 2.0f +
+                                   label_h + (has_description ? 2.0f + description_h : 0.0f));
         // INT rows carry -/+ buttons and TEXT rows an edit field, both drawn on
         // top of the row selectable; without AllowOverlap the selectable would
         // swallow the clicks meant for them.
@@ -126,12 +142,18 @@ void draw_items(RecompRuntimeUi *ui, const LauncherTheme &theme,
         const ImVec2 next = ImGui::GetCursorScreenPos();
         const ImU32 label_color = u32(enabled ? theme.text : theme.text_muted,
                                       enabled ? 1.0f : 0.65f);
-        draw->AddText(ImVec2(start.x + theme.spacing_md,
-                            start.y + theme.spacing_sm),
-                      label_color, item->label ? item->label : "");
+        const ImVec2 text_start(start.x + theme.spacing_md, start.y + theme.spacing_sm);
+        draw->PushClipRect(text_start,
+                          ImVec2(text_start.x + text_w, end.y), true);
+        draw->AddText(ImGui::GetFont(), ImGui::GetFontSize(), text_start,
+                      label_color, label, nullptr, text_w);
+        if (has_description) {
+            draw->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
+                          ImVec2(text_start.x, text_start.y + label_h + 2.0f),
+                          u32(theme.text_muted), item->description, nullptr, text_w);
+        }
+        draw->PopClipRect();
         const bool stepped_value = item->type == RECOMP_RUNTIME_UI_INT;
-        const bool editing_this = item->type == RECOMP_RUNTIME_UI_TEXT &&
-                                  ui->editing_text && selected;
         if (!editing_this) {
             const ImVec2 value_size = ImGui::CalcTextSize(value);
             draw->AddText(ImVec2(end.x - theme.spacing_md - value_size.x -
@@ -141,16 +163,7 @@ void draw_items(RecompRuntimeUi *ui, const LauncherTheme &theme,
                                                   : theme.text_muted),
                           value);
         }
-        if (item->description && item->description[0]) {
-            draw->AddText(ImVec2(start.x + theme.spacing_md,
-                                start.y + theme.spacing_sm +
-                                    ImGui::GetTextLineHeight() + 2.0f),
-                          u32(theme.text_muted), item->description);
-        }
         if (editing_this && enabled) {
-            const float field_w = touch_friendly
-                ? std::clamp((end.x - start.x) * 0.42f, 240.0f, 520.0f)
-                : 200.0f;
             const float field_h = touch_friendly
                 ? std::max(ImGui::GetFrameHeight(), row_h * 0.72f)
                 : ImGui::GetFrameHeight();

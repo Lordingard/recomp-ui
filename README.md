@@ -119,6 +119,12 @@ int rc = recomp_launcher_run_window("My Game — Launcher", &io, &gi,
 #endif
 ```
 
+When the host supplies `gi.config_path`, the launcher also remembers its own
+resized width and height in `launcher-window.ini` beside that config. These are
+logical UI dimensions, fitted to the current display's DPI and work area on
+reopen; they do not change the game's window-size setting. Missing or invalid
+dimensions use the project's 940 by 799 startup size. Window position is not saved.
+
 The whole contract is [`src/recomp_launcher.h`](src/recomp_launcher.h): a plain-C
 settings struct in/out, a game-facts struct, and (optionally) **host callbacks**
 for console-specific verification the launcher re-runs on change — e.g. PSX disc

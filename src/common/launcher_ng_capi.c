@@ -15,6 +15,7 @@
 #include "launcher_model.h"
 #include "launcher_platform.h"
 #include "launcher_theme.h"
+#include "launcher_window_size.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -43,9 +44,14 @@ int recomp_launcher_run_window(const char* window_title,
 
     launcher_boot_timing_mark("rui:run_window:enter");
 
-    LauncherPlatform plat;
+    char window_size_path[1024] = {0};
+    int window_width = LAUNCHER_DEFAULT_WIDTH, window_height = LAUNCHER_DEFAULT_HEIGHT;
+    if (game && launcher_window_size_path(game->config_path, window_size_path,
+                                          sizeof(window_size_path)))
+        launcher_window_size_load(window_size_path, &window_width, &window_height);
+    LauncherPlatform plat = {0};
     if (!launcher_platform_open(&plat, window_title ? window_title : "Launcher",
-                                1100, 880)) {
+                                window_width, window_height)) {
         // Window/GL init failed — tell the caller to boot as if the launcher was
         // skipped, exactly like the old launcher's UNAVAILABLE path.
         return RECOMP_LAUNCHER_RESULT_UNAVAILABLE;
@@ -61,6 +67,7 @@ int recomp_launcher_run_window(const char* window_title,
 
     LngAction act = launcher_backend_run(&plat, &model, &theme);
 
+    launcher_window_size_save(window_size_path, plat.logical_w, plat.logical_h);
     launcher_platform_close(&plat);
 
     if (act == LNG_ACTION_LAUNCH || act == LNG_ACTION_RELAUNCH) {
