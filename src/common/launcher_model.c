@@ -1766,8 +1766,8 @@ bool launcher_model_bios_blocks_play(const LauncherModel* m) {
     if (m->profile && m->profile->verify.mode == 1) {
         if (m->verify.verdict == 0 || m->verify.verdict == 3) return false;
     }
-    /* OpenBIOS (empty path) never blocks Play for a BIOS regen. */
-    if (!m->s.bios_path[0]) return false;
+    /* An empty path is playable only when the host accepts its BIOS fallback. */
+    if (!m->s.bios_path[0]) return !m->setup_bios_ok;
     /* Retail linked-backend mismatch (needs_regen) blocks Play. */
     if (m->setup_bios_needs_regen) return true;
     /* Retail path that isn't Play-ready in this binary. */

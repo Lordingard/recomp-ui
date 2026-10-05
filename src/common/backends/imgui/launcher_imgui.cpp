@@ -2056,8 +2056,18 @@ void draw_player_panel(LauncherModel* m, const LauncherTheme& th, int p, float w
         const float btnh = px(32);
         if (ImGui::Button("Configure", ImVec2(half, btnh))) launcher_model_open_config(m, p);
         ImGui::SameLine(0, gap);
-        const bool on = m->s.player_src[p] != 0;
-        const char* st = on ? "connected" : "not assigned";
+        bool on = m->s.player_src[p] == 1;
+        if (m->s.player_src[p] == 2) {
+            for (int i = 0; i < g_pad_count; ++i) {
+                if (!m->s.player_gamepad_guid[p][0] ||
+                    !strcmp(m->s.player_gamepad_guid[p], g_pads[i].guid)) {
+                    on = true;
+                    break;
+                }
+            }
+        }
+        const char* st = on ? "connected" :
+            (m->s.player_src[p] == 2 ? "disconnected" : "not assigned");
         const float sw = px(10) + px(8) + ImGui::CalcTextSize(st).x;
         // center the dot+label within the right half, vertically on the button
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (half - sw) * 0.5f);
@@ -6981,7 +6991,9 @@ void draw_footer(LauncherModel* m, const LauncherTheme& th, float footer_h) {
     const bool play_enabled = can_play || bios_block;
     if (neon_cta("##play", "PLAY", ImVec2(play_w, play_h), play_enabled)) {
         /* Prefer mismatch prompt over launch even if can_play races true. */
-        if (bios_block)
+        if (bios_block && !m->setup_bios_needs_regen)
+            request_bios_picker(m, "Select BIOS", false);
+        else if (bios_block)
             launcher_model_bios_play_prompt(m);
         else if (mod_commit_launch(m))
             m->action = LNG_ACTION_LAUNCH;
@@ -8517,6 +8529,21 @@ extern "C" LngAction launcher_backend_run(LauncherPlatform* p,
         // DualSense powered on after launch) appear without a relaunch.
         g_pad_count = launcher_input_poll(
             g_pads, LNG_MAX_PADS, m->has_gyro_controls ? 1 : 0);
+        if (m->profile && m->profile->id && !strcmp(m->profile->id, "gba")) {
+            for (int p = 0; p < LNG_MAX_PLAYERS; ++p) {
+                if (m->s.player_src[p] != 2 || !m->s.player_gamepad_guid[p][0]) continue;
+                m->player_pad_id[p] = 0;
+                std::snprintf(m->player_pad_name[p], sizeof(m->player_pad_name[p]),
+                              "Controller (disconnected)");
+                for (int i = 0; i < g_pad_count; ++i) {
+                    if (strcmp(m->s.player_gamepad_guid[p], g_pads[i].guid)) continue;
+                    m->player_pad_id[p] = g_pads[i].id;
+                    std::snprintf(m->player_pad_name[p], sizeof(m->player_pad_name[p]),
+                                  "%s", g_pads[i].name);
+                    break;
+                }
+            }
+        }
 
         // PSX: keep Input source labels on concrete pad names (live SDL name
         // or saved [gamepads] registry), never the generic "Gamepad" placeholder.

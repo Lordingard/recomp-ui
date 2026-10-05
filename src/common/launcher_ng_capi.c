@@ -83,5 +83,6 @@ int recomp_launcher_run_window(const char* window_title,
         return RECOMP_LAUNCHER_RESULT_LAUNCH;
     }
 
+    launcher_model_commit(&model, io);
     return RECOMP_LAUNCHER_RESULT_QUIT;
 }
