@@ -742,6 +742,13 @@ typedef struct RecompLauncherCTpak {
     int  cart_kind;
 } RecompLauncherCTpak;
 
+#define RECOMP_LAUNCHER_HAS_INPUT_TOGGLES 1
+typedef struct RecompLauncherCInputToggle {
+    const char* key;
+    const char* label;
+    int value;
+} RecompLauncherCInputToggle;
+
 typedef struct RecompLauncherCGameInfo {
     const char*    name;
     const char*    region;
@@ -1162,6 +1169,9 @@ typedef struct RecompLauncherCGameInfo {
      * (PSX and friends); everything else leaves this 0 and the row is absent.
      * Appended for ABI stability. */
     int has_fmv_filter;
+    /* Borrowed, host-owned values committed after the launcher closes. */
+    RecompLauncherCInputToggle* input_toggles;
+    int input_toggle_count;
 } RecompLauncherCGameInfo;
 
 /* recomp_launcher_run_window return codes */

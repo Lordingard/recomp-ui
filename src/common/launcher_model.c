@@ -292,6 +292,8 @@ void launcher_model_init(LauncherModel* m,
             clampi(game->assist_binding_count, 0,
                    RECOMP_LAUNCHER_MAX_ASSIST_BINDINGS);
         m->credits_text         = game->credits_text;
+        m->input_toggles        = game->input_toggles;
+        m->input_toggle_count   = game->input_toggles ? clampi(game->input_toggle_count, 0, 16) : 0;
         m->tpak_slots           = clampi(game->tpak_slots, 0, RECOMP_LAUNCHER_MAX_TPAKS);
         m->tpak_inspect_cb      = game->tpak_inspect;
         m->audio_device_labels  = game->audio_device_labels;

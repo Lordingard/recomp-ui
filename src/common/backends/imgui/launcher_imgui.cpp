@@ -1992,6 +1992,17 @@ static int np_guess_local_seat(const LauncherModel* m) {
     return 0;
 }
 
+void draw_input_toggles(LauncherModel* m) {
+    for (int i = 0; i < m->input_toggle_count; ++i) {
+        auto& item = m->input_toggles[i];
+        if (!item.key || !item.label) continue;
+        ImGui::PushID(item.key);
+        bool enabled = item.value != 0;
+        if (ImGui::Checkbox(item.label, &enabled)) item.value = enabled ? 1 : 0;
+        ImGui::PopID();
+    }
+}
+
 void draw_player_panel(LauncherModel* m, const LauncherTheme& th, int p, float w) {
     char id[24];  snprintf(id, sizeof(id), "player%d", p);
     char eb[40];
@@ -2046,6 +2057,7 @@ void draw_player_panel(LauncherModel* m, const LauncherTheme& th, int p, float w
         draw_source_selectables(m, p);
         ImGui::EndCombo();
     }
+    if (p == 0) draw_input_toggles(m);
     ImGui::Dummy(ImVec2(0, px(4)));
     // Configure + connection status share ONE half/half row (Configure left,
     // status right) so the card stays short — that keeps the memory cards below
@@ -3589,6 +3601,7 @@ void draw_controller_config_view(LauncherModel* m, const LauncherTheme& th) {
         row_label("Deadzone", th);
         int dz = 0; stepper("dz", m->s.deadzone[p], "%", &dz);
         if (dz) launcher_model_deadzone_delta(m, p, dz);
+        if (p == 0) draw_input_toggles(m);
     } end_panel();
 
     // Transfer Pak for THIS controller port (N64 tpak games), so it's reachable

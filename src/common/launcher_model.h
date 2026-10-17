@@ -305,6 +305,8 @@ typedef struct {
     bool settings_bindings;
     const char* const* assist_binding_labels;
     int assist_binding_count;
+    RecompLauncherCInputToggle* input_toggles;
+    int input_toggle_count;
     const char* credits_text;
     // Number of players the GAME actually supports. Mega Man X is 1-player, so
     // the launcher must not show a dead Player 2 row. Games that support 2
